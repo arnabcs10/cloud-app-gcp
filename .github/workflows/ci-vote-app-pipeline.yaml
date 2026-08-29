@@ -15,7 +15,7 @@ on:
 env:
   PYTHON_VERSION: '3.11'
   DOCKER_IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/vote-app
-  WORKING_DIRECTORY: cloud-app-gcp/apps/vote
+  WORKING_DIRECTORY: apps/vote
 
 jobs:
   # Job 1: Dependency Installation and Linting
@@ -59,7 +59,7 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       
       - name: Run Pylint (Code Analysis)
-        run: pylint --rcfile=./apps/vote/.pylintrc *.py || true
+        run: pylint *.py || true
         continue-on-error: true
 
   # Job 2: Dependency Vulnerability Scanning
@@ -296,4 +296,3 @@ jobs:
       
       - name: Image digest
         run: echo "Image pushed with digest ${{ steps.meta.outputs.digest }}"
-  
