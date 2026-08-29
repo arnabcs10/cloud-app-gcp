@@ -4,7 +4,14 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "test": "mocha tests/unit/**/*.test.js --exit",
+    "test:integration": "mocha tests/integration/**/*.test.js --exit",
+    "test:coverage": "nyc mocha tests/unit/**/*.test.js --exit",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
+    "format": "prettier --write \"**/*.{js,json,css,html}\"",
+    "format:check": "prettier --check \"**/*.{js,json,css,html}\""
   },
   "author": "",
   "license": "MIT",
@@ -16,5 +23,14 @@
     "pg": "^8.8.0",
     "socket.io": "^4.7.2",
     "stoppable": "^1.1.0"
+  },
+  "devDependencies": {
+    "chai": "^4.3.10",
+    "eslint": "^8.55.0",
+    "mocha": "^10.2.0",
+    "nyc": "^15.1.0",
+    "prettier": "^3.1.1",
+    "sinon": "^17.0.1",
+    "supertest": "^6.3.3"
   }
 }

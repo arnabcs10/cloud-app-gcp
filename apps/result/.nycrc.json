@@ -1,0 +1,11 @@
+{
+  "all": true,
+  "include": ["server.js", "lib/**/*.js"],
+  "exclude": ["tests/**", "node_modules/**", "views/**"],
+  "reporter": ["lcov", "text", "html"],
+  "check-coverage": false,
+  "lines": 70,
+  "statements": 70,
+  "functions": 70,
+  "branches": 70
+}
