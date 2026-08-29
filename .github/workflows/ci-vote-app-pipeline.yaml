@@ -4,12 +4,12 @@ on:
   push:
     branches: [ main, dev ]
     paths:
-      - 'cloud-app-gcp/apps/vote/**'
+      - 'apps/vote/**'
       - '.github/workflows/ci-vote-app-pipeline.yaml'
   pull_request:
     branches: [ main, dev ]
     paths:
-      - 'cloud-app-gcp/apps/vote/**'
+      - 'apps/vote/**'
       - '.github/workflows/ci-vote-app-pipeline.yaml'
 
 env:
