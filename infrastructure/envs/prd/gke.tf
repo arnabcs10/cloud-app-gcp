@@ -118,68 +118,68 @@ module "gke" {
       }
     },
     # System/monitoring node pool (smaller nodes)
-    {
-      name               = "system-pool-${var.environment}"
-      initial_node_count = 1
-      machine_type       = "e2-medium"
-      disk_size_gb       = 50
-      disk_type          = "pd-standard"
-      image_type         = "COS_CONTAINERD"
-      preemptible        = false
-      spot               = false
+    # {
+    #   name               = "system-pool-${var.environment}"
+    #   initial_node_count = 1
+    #   machine_type       = "e2-medium"
+    #   disk_size_gb       = 50
+    #   disk_type          = "pd-standard"
+    #   image_type         = "COS_CONTAINERD"
+    #   preemptible        = false
+    #   spot               = false
 
-      service_account = module.iam.service_account_emails["gke-node-sa-${var.environment}"]
+    #   service_account = module.iam.service_account_emails["gke-node-sa-${var.environment}"]
 
-      oauth_scopes = [
-        "https://www.googleapis.com/auth/cloud-platform"
-      ]
+    #   oauth_scopes = [
+    #     "https://www.googleapis.com/auth/cloud-platform"
+    #   ]
 
-      labels = merge(
-        var.labels,
-        {
-          node_pool = "system-pool"
-          workload  = "system"
-        }
-      )
+    #   labels = merge(
+    #     var.labels,
+    #     {
+    #       node_pool = "system-pool"
+    #       workload  = "system"
+    #     }
+    #   )
 
-      metadata = {
-        disable-legacy-endpoints = "true"
-      }
+    #   metadata = {
+    #     disable-legacy-endpoints = "true"
+    #   }
 
-      tags = ["gke-node", "${var.environment}", "system-pool"]
+    #   tags = ["gke-node", "${var.environment}", "system-pool"]
 
-      auto_repair  = true
-      auto_upgrade = true
+    #   auto_repair  = true
+    #   auto_upgrade = true
 
-      # Smaller autoscaling for system workloads
-      autoscaling = {
-        min_node_count  = 1
-        max_node_count  = 3
-        location_policy = "BALANCED"
-      }
+    #   # Smaller autoscaling for system workloads
+    #   autoscaling = {
+    #     min_node_count  = 1
+    #     max_node_count  = 3
+    #     location_policy = "BALANCED"
+    #   }
 
-      # Taints to ensure only system workloads run here
-      taints = [
-        {
-          key    = "workload-type"
-          value  = "system"
-          effect = "NO_SCHEDULE"
-        }
-      ]
+    #   # Taints to ensure only system workloads run here
+    #   taints = [
+    #     {
+    #       key    = "workload-type"
+    #       value  = "system"
+    #       effect = "NO_SCHEDULE"
+    #     }
+    #   ]
 
-      upgrade_settings = {
-        max_surge       = 1
-        max_unavailable = 0
-        strategy        = "SURGE"
-      }
-    }
+    #   upgrade_settings = {
+    #     max_surge       = 1
+    #     max_unavailable = 0
+    #     strategy        = "SURGE"
+    #   }
+    # }
   ]
 
   # Workload Identity Service Accounts
   workload_identity_service_accounts = [
     {
       name                = "voting-app-sa-${var.environment}"
-      namespace           = "default"
+      namespace           = "ns-vote-app"
       k8s_service_account = "voting-app"
       description         = "Workload Identity for voting app"
       roles = [
@@ -189,7 +189,7 @@ module "gke" {
     },
     {
       name                = "results-app-sa-${var.environment}"
-      namespace           = "default"
+      namespace           = "ns-result-app"
       k8s_service_account = "results-app"
       description         = "Workload Identity for results app"
       roles = [
@@ -199,7 +199,7 @@ module "gke" {
     },
     {
       name                = "worker-app-sa-${var.environment}"
-      namespace           = "default"
+      namespace           = "ns-worker-app"
       k8s_service_account = "worker-app"
       description         = "Workload Identity for worker app"
       roles = [

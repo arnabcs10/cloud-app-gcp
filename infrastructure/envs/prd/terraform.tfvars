@@ -4,7 +4,7 @@
 # ========================================
 # Project Configuration
 # ========================================
-project_id  = ""
+project_id  = "burner-arnsengu"
 region      = "us-central1"                 # Primary region for resources
 environment = "prd"
 
