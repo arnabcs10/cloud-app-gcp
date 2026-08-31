@@ -1,0 +1,141 @@
+# Worker Application Deployment
+---
+# Worker App Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-app
+  namespace: ns-worker-app
+  labels:
+    app: worker-app
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: worker-app
+        component: backend
+        version: v1
+    spec:
+      serviceAccountName: worker-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      # Main worker container
+      - name: worker-app
+        image: arnabcs10/worker-app:latest 
+        imagePullPolicy: Always
+        env:
+        # Redis connection
+        - name: REDIS_HOST
+          value: "redis-service.ns-redis.svc.cluster.local"
+        # Database connection through Cloud SQL Proxy
+        # The proxy runs on localhost:5432
+        - name: DB_HOST
+          value: "127.0.0.1"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: cloudsql-db-credentials
+              key: DB_NAME
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: cloudsql-db-credentials
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cloudsql-db-credentials
+              key: DB_PASSWORD
+        # Connection string for .NET application
+        - name: CONNECTION_STRING
+          value: "Server=127.0.0.1;Port=5432;Database=$(DB_NAME);Username=$(DB_USER);Password=$(DB_PASSWORD);"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+
+        # livenessProbe:
+        #   exec:
+        #     command:
+        #     - /bin/sh
+        #     - -c
+        #     - pgrep -f Worker.dll || exit 1
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 30
+        #   timeoutSeconds: 5
+        #   failureThreshold: 3
+      
+      # Cloud SQL Proxy sidecar container
+      - name: cloud-sql-proxy
+        image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.8.0
+        args:
+          - "--private-ip"
+          - "burner-arnsengu:us-central1:cloud-app-postgres-prd"
+          - "--port=5432"
+          - "--health-check"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /liveness
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      
+      # Init containers to wait for dependencies
+      initContainers:
+      - name: wait-for-redis
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z redis-service.ns-redis.svc.cluster.local 6379; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+          echo "Redis is ready!"
+      
+      - name: wait-for-db
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Cloud SQL Proxy to be ready..."
+          sleep 10
+          echo "Cloud SQL Proxy should be ready!"

@@ -1,0 +1,32 @@
+# Worker App ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-app-config
+  namespace: ns-worker-app
+  labels:
+    app: worker-app
+data:
+  REDIS_HOST: "redis-service.ns-redis.svc.cluster.local"
+  REDIS_PORT: "6379"
+
+---
+# CloudSQL Connection Secret for Worker App
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudsql-db-credentials
+  namespace: ns-worker-app
+  labels:
+    app: worker-app
+type: Opaque
+data:
+  # Get these from Terraform outputs
+  DB_HOST: REPLACE_WITH_BASE64_ENCODED_CLOUDSQL_PRIVATE_IP
+  DB_PORT: NTQzMg==  # 5432
+  DB_NAME: dm90aW5nX2FwcA==  # voting_app
+  DB_USER: cG9zdGdyZXM=  # postgres
+  DB_PASSWORD: REPLACE_WITH_BASE64_ENCODED_PASSWORD  # Get from terraform output
+stringData:
+  # Connection string for .NET worker
+  CONNECTION_STRING: "Server=REPLACE_CLOUDSQL_IP;Port=5432;Database=voting_app;Username=postgres;Password=REPLACE_PASSWORD;"

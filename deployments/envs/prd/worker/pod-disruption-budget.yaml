@@ -1,0 +1,14 @@
+# PodDisruptionBudget for Worker App
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-app-pdb
+  namespace: ns-worker-app
+  labels:
+    app: worker-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: worker-app
+  unhealthyPodEvictionPolicy: AlwaysAllow
