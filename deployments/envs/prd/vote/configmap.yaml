@@ -1,0 +1,13 @@
+# Vote App ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vote-app-config
+  namespace: ns-vote-app
+  labels:
+    app: vote-app
+data:
+  OPTION_A: "Cats"
+  OPTION_B: "Dogs"
+  REDIS_HOST: "redis-service.ns-redis.svc.cluster.local"
+  REDIS_PORT: "6379"

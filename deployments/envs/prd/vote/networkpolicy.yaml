@@ -1,0 +1,46 @@
+# Network Policies for Pod-to-Pod Communication Security
+---
+# Network Policy for Vote App
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vote-app-netpol
+  namespace: ns-vote-app
+spec:
+  podSelector:
+    matchLabels:
+      app: vote-app
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from GCP Load Balancer
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 80
+  egress:
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow access to Redis in ns-redis namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          app: voting-system
+          component: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow outbound HTTPS for external dependencies
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443

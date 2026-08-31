@@ -1,0 +1,136 @@
+# Vote Application Deployment and Service
+---
+# Vote App Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vote-app
+  namespace: ns-vote-app
+  labels:
+    app: vote-app
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vote-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vote-app
+        component: frontend
+        version: v1
+    spec:
+      serviceAccountName: voting-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: vote-app
+        image: arnabcs10/vote-app:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        env:
+        - name: OPTION_A
+          valueFrom:
+            configMapKeyRef:
+              name: vote-app-config
+              key: OPTION_A
+        - name: OPTION_B
+          valueFrom:
+            configMapKeyRef:
+              name: vote-app-config
+              key: OPTION_B
+
+        - name: REDIS_HOST
+          value: "redis-service.ns-redis.svc.cluster.local"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        # livenessProbe:
+        #   httpGet:
+        #     path: /
+        #     port: http
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 10
+        #   timeoutSeconds: 5
+        #   failureThreshold: 3
+        # readinessProbe:
+        #   httpGet:
+        #     path: /
+        #     port: http
+        #   initialDelaySeconds: 10
+        #   periodSeconds: 5
+        #   timeoutSeconds: 3
+        #   failureThreshold: 3
+      # Add init container to wait for Redis
+      initContainers:
+      - name: wait-for-redis
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z redis-service.ns-redis.svc.cluster.local 6379; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+          echo "Redis is ready!"
+---
+# Vote App Service (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: vote-app-service
+  namespace: ns-vote-app
+  labels:
+    app: vote-app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: vote-app
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vote-app-ingress
+  namespace: ns-vote-app
+  labels:
+    app: vote-app
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "vote-app-ip" 
+    networking.gke.io/managed-certificates: "vote-app-cert" 
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: vote-app-service
+            port:
+              number: 80

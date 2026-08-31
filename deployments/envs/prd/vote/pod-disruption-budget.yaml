@@ -1,0 +1,17 @@
+# PodDisruptionBudgets for High Availability
+# Ensures minimum number of pods are available during voluntary disruptions
+---
+# PodDisruptionBudget for Vote App
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vote-app-pdb
+  namespace: ns-vote-app
+  labels:
+    app: vote-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: vote-app
+  unhealthyPodEvictionPolicy: AlwaysAllow
