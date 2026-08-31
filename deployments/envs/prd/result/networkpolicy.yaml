@@ -1,0 +1,43 @@
+---
+# Network Policy for Result App
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: result-app-netpol
+  namespace: ns-result-app
+spec:
+  podSelector:
+    matchLabels:
+      app: result-app
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from GCP Load Balancer
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 80
+  egress:
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow access to Cloud SQL (private IP)
+  - to:
+    - ipBlock:
+        cidr: 10.0.0.0/8  # Adjust based on your VPC CIDR
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow outbound HTTPS
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443

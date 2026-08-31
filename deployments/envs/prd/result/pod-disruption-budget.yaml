@@ -1,0 +1,14 @@
+# PodDisruptionBudget for Result App
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: result-app-pdb
+  namespace: ns-result-app
+  labels:
+    app: result-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: result-app
+  unhealthyPodEvictionPolicy: AlwaysAllow

@@ -1,0 +1,33 @@
+# Result App ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: result-app-config
+  namespace: ns-result-app
+  labels:
+    app: result-app
+data:
+  PORT: "80"
+
+---
+# CloudSQL Connection Secret for Result App
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudsql-db-credentials
+  namespace: ns-result-app
+  labels:
+    app: result-app
+type: Opaque
+data:
+  # Get these from Terraform outputs: terraform output -raw cloudsql_private_ip_address
+  # Base64 encode before adding here
+  DB_HOST: REPLACE_WITH_BASE64_ENCODED_CLOUDSQL_PRIVATE_IP
+  DB_PORT: NTQzMg==  # 5432
+  DB_NAME: dm90aW5nX2FwcA==  # voting_app
+  DB_USER: cG9zdGdyZXM=  # postgres
+  DB_PASSWORD: REPLACE_WITH_BASE64_ENCODED_PASSWORD  # Get from terraform output
+stringData:
+  # Example connection string (will be auto-encoded)
+  # Replace with actual values
+  CONNECTION_STRING: "postgres://postgres:REPLACE_PASSWORD@REPLACE_CLOUDSQL_IP:5432/voting_app"

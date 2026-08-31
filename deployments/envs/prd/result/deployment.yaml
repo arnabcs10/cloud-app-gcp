@@ -1,0 +1,179 @@
+# Result Application Deployment and Service
+---
+# Result App Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: result-app
+  namespace: ns-result-app
+  labels:
+    app: result-app
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: result-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: result-app
+        component: frontend
+        version: v1
+    spec:
+      serviceAccountName: results-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      # Main application container
+      - name: result-app
+        image: arnabcs10/result-app:latest 
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        env:
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: result-app-config
+              key: PORT
+        # Database connection through Cloud SQL Proxy
+        # The proxy runs on localhost:5432
+        - name: PGHOST
+          value: "127.0.0.1"
+        - name: PGPORT
+          value: "5432"
+        - name: PGDATABASE
+          valueFrom:
+            secretKeyRef:
+              name: cloudsql-db-credentials
+              key: DB_NAME
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              name: cloudsql-db-credentials
+              key: DB_USER
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cloudsql-db-credentials
+              key: DB_PASSWORD
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+        # livenessProbe:
+        #   httpGet:
+        #     path: /
+        #     port: http
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 10
+        #   timeoutSeconds: 5
+        #   failureThreshold: 3
+        # readinessProbe:
+        #   httpGet:
+        #     path: /
+        #     port: http
+        #   initialDelaySeconds: 15
+        #   periodSeconds: 5
+        #   timeoutSeconds: 3
+        #   failureThreshold: 3
+      
+      # Cloud SQL Proxy sidecar container
+      - name: cloud-sql-proxy
+        image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.8.0
+        args:
+          - "--private-ip"
+          - "burner-arnsengu:us-central1:cloud-app-postgres-prd"
+          - "--port=5432"
+          - "--health-check"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /liveness
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      
+      # Init container to wait for Cloud SQL Proxy
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Cloud SQL Proxy to be ready..."
+          sleep 10
+          echo "Cloud SQL Proxy should be ready!"
+---
+# Result App Service (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: result-app-service
+  namespace: ns-result-app
+  labels:
+    app: result-app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: result-app
+  sessionAffinity: None
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: result-app-ingress
+  namespace: ns-result-app
+  labels:
+    app: result-app
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "result-app-ip" 
+    networking.gke.io/managed-certificates: "result-app-cert" 
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: result-app-service
+            port:
+              number: 80

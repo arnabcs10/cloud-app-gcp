@@ -1,0 +1,8 @@
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - deployment.yaml
+  - configmap.yaml
+  - hpa.yaml
+  - pod-disruption-budget.yaml
+  - networkpolicy.yaml
