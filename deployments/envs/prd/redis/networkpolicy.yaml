@@ -1,0 +1,41 @@
+# Network Policy for Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-netpol
+  namespace: ns-redis
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow access from vote-app namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          app: voting-system
+          component: vote
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow access from worker-app namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          app: voting-system
+          component: worker
+    ports:
+    - protocol: TCP
+      port: 6379
+  egress:
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
