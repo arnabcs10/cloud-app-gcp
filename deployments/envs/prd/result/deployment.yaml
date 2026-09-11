@@ -155,25 +155,25 @@ spec:
     app: result-app
   sessionAffinity: None
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: result-app-ingress
-  namespace: ns-result-app
-  labels:
-    app: result-app
-  annotations:
-    kubernetes.io/ingress.class: "gce"
-    kubernetes.io/ingress.global-static-ip-name: "result-app-ip" 
-    networking.gke.io/managed-certificates: "result-app-cert" 
-spec:
-  rules:
-  - http:
-      paths:
-      - path: /*
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: result-app-service
-            port:
-              number: 80
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: result-app-ingress
+#   namespace: ns-result-app
+#   labels:
+#     app: result-app
+#   annotations:
+#     kubernetes.io/ingress.class: "gce"
+#     kubernetes.io/ingress.global-static-ip-name: "result-app-ip" 
+#     networking.gke.io/managed-certificates: "result-app-cert" 
+# spec:
+#   rules:
+#   - http:
+#       paths:
+#       - path: /*
+#         pathType: ImplementationSpecific
+#         backend:
+#           service:
+#             name: result-app-service
+#             port:
+#               number: 80

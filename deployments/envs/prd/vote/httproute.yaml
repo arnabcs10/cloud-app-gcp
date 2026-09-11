@@ -1,0 +1,26 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vote-app-route
+  namespace: ns-vote-app
+spec:
+  parentRefs:
+  - name: shared-gateway
+    namespace: gateway
+    sectionName: https
+  hostnames:
+  - "voteing-app.gcp.cloud" 
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /vote
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplacePrefixMatch
+          replacePrefixMatch: /
+    backendRefs:
+    - name: vote-app-service
+      port: 80
