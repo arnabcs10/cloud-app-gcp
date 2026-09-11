@@ -1,0 +1,440 @@
+# =============================================================================
+# Prometheus Helm Chart Values
+# Chart: prometheus-community/prometheus  v25.21.0
+# Namespace: ns-observability
+# Stage: testing (minimal storage, 7-day retention)
+# =============================================================================
+
+# -----------------------------------------------------------------------
+# Prometheus Server
+# -----------------------------------------------------------------------
+server:
+  enabled: true
+  replicaCount: 1
+  statefulSet:
+    enabled: true
+
+  # Storage
+  persistentVolume:
+    enabled: true
+    size: 10Gi
+    storageClass: standard-rwo
+    accessModes:
+      - ReadWriteOnce
+
+  # Retention: 7 days / 8 GB cap for testing
+  retention: "7d"
+  retentionSize: "8GB"
+
+  # Resources
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534
+
+  # Remote-write receiver on (for Tempo metrics generator)
+  extraFlags:
+    - web.enable-lifecycle
+    - web.enable-remote-write-receiver
+
+  # External labels for all metrics
+  global:
+    scrape_interval: 30s
+    evaluation_interval: 30s
+    scrape_timeout: 10s
+    external_labels:
+      cluster: cloud-app-gke-prd
+      env: prd
+
+  # Alertmanager endpoint
+  alertingRules: {}
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+  service:
+    type: ClusterIP
+    port: 9090
+
+  # Service account
+  serviceAccountName: prometheus
+
+# -----------------------------------------------------------------------
+# Scrape Configs — all application + infra targets
+# -----------------------------------------------------------------------
+serverFiles:
+  prometheus.yml:
+    global:
+      scrape_interval: 30s
+      evaluation_interval: 30s
+      scrape_timeout: 10s
+      external_labels:
+        cluster: cloud-app-gke-prd
+        env: prd
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ["alertmanager:9093"]
+
+    rule_files:
+      - /etc/config/recording_rules.yml
+      - /etc/config/alerting_rules.yml
+
+    scrape_configs:
+      - job_name: kubernetes-apiservers
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: default;kubernetes;https
+
+      - job_name: kubernetes-nodes
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.*)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/$1/proxy/metrics
+
+      - job_name: kubernetes-cadvisor
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        metrics_path: /metrics/cadvisor
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.*)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
+
+      - job_name: kubernetes-service-endpoints
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.*)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: kubernetes_name
+
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.*)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+
+      - job_name: kube-state-metrics
+        static_configs:
+          - targets: ["kube-state-metrics:8080"]
+
+      - job_name: node-exporter
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [ns-observability]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: prometheus-node-exporter
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: node
+
+      - job_name: vote-app
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [ns-vote-app]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: vote-app
+          - source_labels: [__address__]
+            regex: ([^:]+)(:\d+)?
+            replacement: $1:9090
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - target_label: service
+            replacement: vote-app
+
+      - job_name: result-app
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [ns-result-app]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: result-app
+          - source_labels: [__address__]
+            regex: ([^:]+)(:\d+)?
+            replacement: $1:9090
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - target_label: service
+            replacement: result-app
+
+      - job_name: worker-app
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [ns-worker-app]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: worker-app
+          - source_labels: [__address__]
+            regex: ([^:]+)(:\d+)?
+            replacement: $1:9090
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - target_label: service
+            replacement: worker-app
+
+      - job_name: redis-exporter
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [ns-observability]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: prometheus-redis-exporter
+          - source_labels: [__address__]
+            regex: ([^:]+)(:\d+)?
+            replacement: $1:9121
+            target_label: __address__
+          - target_label: service
+            replacement: redis
+
+  alerting_rules.yml:
+    groups:
+      - name: application-alerts
+        rules:
+          - alert: HighErrorRate
+            expr: |
+              rate(http_requests_total{status=~"5.."}[5m]) /
+              rate(http_requests_total[5m]) > 0.05
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "High error rate on {{ $labels.service }}"
+              description: "Error rate is {{ $value | humanizePercentage }} on {{ $labels.pod }}"
+
+          - alert: HighLatencyP95
+            expr: |
+              histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High P95 latency on {{ $labels.service }}"
+              description: "P95 latency is {{ $value }}s"
+
+          - alert: ServiceDown
+            expr: up == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Service {{ $labels.job }} is down"
+              description: "{{ $labels.instance }} has been unreachable for 2 minutes"
+
+      - name: infrastructure-alerts
+        rules:
+          - alert: NodeCPUHigh
+            expr: |
+              (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) by (instance)) > 0.80
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU on {{ $labels.instance }}"
+              description: "CPU usage is {{ $value | humanizePercentage }}"
+
+          - alert: NodeMemoryHigh
+            expr: |
+              (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory on {{ $labels.instance }}"
+              description: "Memory usage is {{ $value | humanizePercentage }}"
+
+          - alert: PodRestartLoop
+            expr: rate(kube_pod_container_status_restarts_total[15m]) > 0.1
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod {{ $labels.pod }} in {{ $labels.namespace }} is restart-looping"
+
+          - alert: PersistentVolumeUsageHigh
+            expr: |
+              kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.85
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "PVC {{ $labels.persistentvolumeclaim }} usage > 85%"
+
+      - name: database-alerts
+        rules:
+          - alert: RedisDown
+            expr: redis_up == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Redis is down"
+
+          - alert: RedisMemoryHigh
+            expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.80
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Redis memory usage > 80%"
+
+          - alert: PostgreSQLSlowQueries
+            expr: rate(pg_stat_activity_count{state="active"}[5m]) > 50
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High active query count on PostgreSQL"
+
+# -----------------------------------------------------------------------
+# Alertmanager — disabled in chart, deployed separately
+# -----------------------------------------------------------------------
+alertmanager:
+  enabled: false
+
+# -----------------------------------------------------------------------
+# Pushgateway — not needed
+# -----------------------------------------------------------------------
+pushgateway:
+  enabled: false
+
+# -----------------------------------------------------------------------
+# Node Exporter — DaemonSet on all nodes
+# -----------------------------------------------------------------------
+prometheus-node-exporter:
+  enabled: true
+  hostRootFsMount:
+    enabled: true
+    mountPropagation: HostToContainer
+  extraArgs:
+    - --no-collector.wifi
+    - --no-collector.hwmon
+    - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/pods/.+)($$|/)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  tolerations:
+    - operator: Exists
+      effect: NoSchedule
+
+# -----------------------------------------------------------------------
+# Kube State Metrics
+# -----------------------------------------------------------------------
+kube-state-metrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# -----------------------------------------------------------------------
+# RBAC — use existing prometheus ServiceAccount
+# -----------------------------------------------------------------------
+rbac:
+  create: true
+serviceAccounts:
+  server:
+    create: false
+    name: prometheus

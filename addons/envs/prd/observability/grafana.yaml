@@ -1,0 +1,288 @@
+# =============================================================================
+# Grafana Helm Chart Values
+# Chart: grafana/grafana  v8.0.0
+# Namespace: ns-observability
+# =============================================================================
+
+replicas: 1
+
+image:
+  tag: "11.0.0"
+
+# Use existing service account
+serviceAccount:
+  create: false
+  name: grafana
+
+# -----------------------------------------------------------------------
+# Persistence
+# -----------------------------------------------------------------------
+persistence:
+  enabled: true
+  type: pvc
+  storageClassName: standard-rwo
+  accessModes:
+    - ReadWriteOnce
+  size: 2Gi
+
+# -----------------------------------------------------------------------
+# Admin credentials (from existing secret)
+# -----------------------------------------------------------------------
+admin:
+  existingSecret: grafana-admin-secret
+  userKey: admin-user
+  passwordKey: admin-password
+
+# -----------------------------------------------------------------------
+# grafana.ini settings
+# -----------------------------------------------------------------------
+grafana.ini:
+  server:
+    domain: grafana.voteing-app.gcp.cloud
+    root_url: https://grafana.voteing-app.gcp.cloud
+  security:
+    allow_embedding: true
+    cookie_secure: true
+    cookie_samesite: lax
+  auth:
+    disable_login_form: false
+  users:
+    allow_sign_up: false
+    default_theme: dark
+  log:
+    mode: console
+    level: warn
+  alerting:
+    enabled: false
+  unified_alerting:
+    enabled: false
+  smtp:
+    enabled: true
+    host: smtp.gmail.com:587
+    user: alertmanager@your-domain.com
+    # password read from mounted secret file
+    password: "$__file{/etc/secrets/smtp-password}"
+    from_address: grafana@your-domain.com
+    from_name: Grafana Observability
+    startTLS_policy: MandatoryStartTLS
+  feature_toggles:
+    enable: traceToMetrics
+
+# -----------------------------------------------------------------------
+# SMTP secret mount
+# -----------------------------------------------------------------------
+extraSecretMounts:
+  - name: grafana-smtp-secret
+    secretName: grafana-admin-secret
+    mountPath: /etc/secrets
+    readOnly: true
+
+# -----------------------------------------------------------------------
+# Data Sources: Prometheus + Loki + Tempo (with cross-linking)
+# -----------------------------------------------------------------------
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus-server.ns-observability.svc.cluster.local:9090
+        isDefault: true
+        jsonData:
+          httpMethod: POST
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: tempo
+        editable: false
+
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.ns-observability.svc.cluster.local:3100
+        jsonData:
+          derivedFields:
+            - name: TraceID
+              matcherRegex: "trace_id=(\\w+)"
+              url: "$${__value.raw}"
+              datasourceUid: tempo
+        editable: false
+
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo.ns-observability.svc.cluster.local:3200
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            filterByTraceID: true
+            filterBySpanID: false
+          tracesToMetrics:
+            datasourceUid: prometheus
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+        editable: false
+
+# -----------------------------------------------------------------------
+# Dashboard providers
+# -----------------------------------------------------------------------
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: observability-dashboards
+        orgId: 1
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+# -----------------------------------------------------------------------
+# Dashboards: Application Overview + Infrastructure Health
+# -----------------------------------------------------------------------
+dashboards:
+  default:
+    app-overview:
+      json: |
+        {
+          "title": "Application Overview",
+          "uid": "app-overview",
+          "tags": ["application", "voting-app"],
+          "timezone": "browser",
+          "refresh": "30s",
+          "time": { "from": "now-1h", "to": "now" },
+          "panels": [
+            {
+              "id": 1,
+              "title": "Request Rate by Service",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (service) (rate(http_requests_total[5m]))", "legendFormat": "{{ service }}"}]
+            },
+            {
+              "id": 2,
+              "title": "Error Rate by Service",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (service) (rate(http_requests_total{status=~\"5..\"}[5m]))", "legendFormat": "{{ service }} errors"}]
+            },
+            {
+              "id": 3,
+              "title": "P95 Latency by Service",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "{{ service }} p95"}]
+            },
+            {
+              "id": 4,
+              "title": "Redis Queue Depth",
+              "type": "stat",
+              "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "redis_list_length{key=\"votes\"}", "legendFormat": "votes queue"}]
+            },
+            {
+              "id": 5,
+              "title": "Pod Status",
+              "type": "table",
+              "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "kube_pod_status_phase{namespace=~\"ns-vote-app|ns-result-app|ns-worker-app|ns-redis\"}", "legendFormat": "{{ namespace }}/{{ pod }}"}]
+            },
+            {
+              "id": 6,
+              "title": "Application Logs (Recent Errors)",
+              "type": "logs",
+              "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+              "targets": [{"datasource": {"type": "loki", "uid": "loki"}, "expr": "{namespace=~\"ns-vote-app|ns-result-app|ns-worker-app\"} |= \"error\" | level=\"error\""}]
+            }
+          ]
+        }
+    infra-health:
+      json: |
+        {
+          "title": "Infrastructure Health",
+          "uid": "infra-health",
+          "tags": ["infrastructure", "kubernetes", "nodes"],
+          "timezone": "browser",
+          "refresh": "1m",
+          "time": { "from": "now-6h", "to": "now" },
+          "panels": [
+            {
+              "id": 1,
+              "title": "Node CPU Usage",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "{{ instance }}"}]
+            },
+            {
+              "id": 2,
+              "title": "Node Memory Usage",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes", "legendFormat": "{{ instance }}"}]
+            },
+            {
+              "id": 3,
+              "title": "Pod Restarts (Last 15m)",
+              "type": "table",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "increase(kube_pod_container_status_restarts_total[15m]) > 0", "legendFormat": "{{ namespace }}/{{ pod }}"}]
+            },
+            {
+              "id": 4,
+              "title": "HPA Replicas vs Desired",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+              "targets": [
+                {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "kube_horizontalpodautoscaler_status_current_replicas", "legendFormat": "{{ horizontalpodautoscaler }} current"},
+                {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "kube_horizontalpodautoscaler_status_desired_replicas", "legendFormat": "{{ horizontalpodautoscaler }} desired"}
+              ]
+            },
+            {
+              "id": 5,
+              "title": "Container CPU Usage by Namespace",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))", "legendFormat": "{{ namespace }}"}]
+            },
+            {
+              "id": 6,
+              "title": "Container Memory Usage by Namespace",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (namespace) (container_memory_working_set_bytes{container!=\"\"})", "legendFormat": "{{ namespace }}"}]
+            }
+          ]
+        }
+
+# -----------------------------------------------------------------------
+# Resources
+# -----------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# -----------------------------------------------------------------------
+# Service
+# -----------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 3000
+
+# -----------------------------------------------------------------------
+# Security context
+# -----------------------------------------------------------------------
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 472
+  fsGroup: 472

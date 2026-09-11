@@ -1,0 +1,9 @@
+# Observability Stack Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ns-observability
+  labels:
+    name: ns-observability
+    app.kubernetes.io/part-of: observability-stack
+    env: prd

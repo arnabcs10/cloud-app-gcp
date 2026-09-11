@@ -1,0 +1,40 @@
+# =============================================================================
+# Prometheus Redis Exporter Helm Chart Values
+# Chart: prometheus-community/prometheus-redis-exporter  v6.3.0
+# Namespace: ns-observability
+# Scrapes Redis in ns-redis and exposes metrics on :9121
+# =============================================================================
+
+# Point to Redis in its namespace
+redisAddress: redis://redis-service.ns-redis.svc.cluster.local:6379
+
+# Prometheus scrape annotations — auto-discovered by Prometheus
+serviceMonitor:
+  enabled: false   # Using annotation-based scraping instead
+
+service:
+  type: ClusterIP
+  port: 9121
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9121"
+    prometheus.io/path: "/metrics"
+
+# Resources
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 59000
+
+# Log format
+extraEnvVars:
+  - name: REDIS_EXPORTER_LOG_FORMAT
+    value: json

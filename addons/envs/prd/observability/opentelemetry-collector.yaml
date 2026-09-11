@@ -1,0 +1,135 @@
+# =============================================================================
+# OpenTelemetry Collector Helm Chart Values
+# Chart: open-telemetry/opentelemetry-collector  v0.91.1
+# Namespace: ns-observability
+# Receives OTLP traces from apps, samples 10%, forwards to Tempo
+# =============================================================================
+image:
+  repository: "otel/opentelemetry-collector-k8s"
+
+mode: deployment
+replicaCount: 1
+
+# Use existing service account
+serviceAccount:
+  create: false
+  name: otel-collector
+
+# -----------------------------------------------------------------------
+# Ports: OTLP gRPC + HTTP + metrics + health
+# -----------------------------------------------------------------------
+ports:
+  otlp:
+    enabled: true
+    containerPort: 4317
+    servicePort: 4317
+    protocol: TCP
+  otlp-http:
+    enabled: true
+    containerPort: 4318
+    servicePort: 4318
+    protocol: TCP
+  metrics:
+    enabled: true
+    containerPort: 8888
+    servicePort: 8888
+    protocol: TCP
+
+# -----------------------------------------------------------------------
+# OTel Collector pipeline configuration
+# -----------------------------------------------------------------------
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+  processors:
+    batch:
+      send_batch_size: 1000
+      timeout: 5s
+      send_batch_max_size: 1500
+
+    memory_limiter:
+      check_interval: 1s
+      limit_mib: 512
+      spike_limit_mib: 128
+
+    # 10% head-based sampling — testing stage
+    probabilistic_sampler:
+      sampling_percentage: 10
+
+    resource:
+      attributes:
+        - action: insert
+          key: deployment.environment
+          value: prd
+        - action: insert
+          key: k8s.cluster.name
+          value: cloud-app-gke-prd
+
+  exporters:
+    otlp/tempo:
+      endpoint: tempo.ns-observability.svc.cluster.local:4317
+      tls:
+        insecure: true
+
+    logging:
+      verbosity: basic
+
+  extensions:
+    health_check:
+      endpoint: 0.0.0.0:13133
+    pprof:
+      endpoint: 0.0.0.0:1777
+    zpages:
+      endpoint: 0.0.0.0:55679
+
+  service:
+    extensions: [health_check, pprof, zpages]
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, resource, probabilistic_sampler, batch]
+        exporters: [otlp/tempo, logging]
+    telemetry:
+      logs:
+        level: warn
+      metrics:
+        address: 0.0.0.0:8888
+
+# -----------------------------------------------------------------------
+# Resources
+# -----------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# -----------------------------------------------------------------------
+# Liveness / readiness via health_check extension
+# -----------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /
+    port: 13133
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: 13133
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
