@@ -2,55 +2,137 @@ using System;
 using System.Data.Common;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Npgsql;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Prometheus;
 using StackExchange.Redis;
 
 namespace Worker
 {
     public class Program
     {
+        // ───────────────────────────────────────────────────────
+        // Prometheus Metrics
+        // ───────────────────────────────────────────────────────
+        private static readonly Counter VotesProcessed = Metrics
+            .CreateCounter("worker_votes_processed_total", "Total votes processed",
+                new CounterConfiguration { LabelNames = new[] { "service" } });
+
+        private static readonly Counter VoteErrors = Metrics
+            .CreateCounter("worker_vote_errors_total", "Total vote processing errors",
+                new CounterConfiguration { LabelNames = new[] { "service", "reason" } });
+
+        private static readonly Histogram VoteProcessingDuration = Metrics
+            .CreateHistogram("worker_vote_processing_duration_seconds",
+                "Time taken to process a single vote",
+                new HistogramConfiguration
+                {
+                    LabelNames = new[] { "service" },
+                    Buckets = new[] { 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0 },
+                });
+
+        private static readonly Gauge QueueDepth = Metrics
+            .CreateGauge("worker_redis_queue_depth", "Current depth of the Redis votes queue");
+
         public static int Main(string[] args)
         {
+            // ───────────────────────────────────────────────────────
+            // OpenTelemetry Tracing
+            // ───────────────────────────────────────────────────────
+            var otelEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+                ?? "http://otel-collector.ns-observability.svc.cluster.local:4317";
+
+            using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+                .SetResourceBuilder(
+                    ResourceBuilder.CreateDefault()
+                        .AddService("worker-app", serviceVersion: "1.0.0")
+                        .AddAttributes(new[] {
+                            new System.Collections.Generic.KeyValuePair<string, object>(
+                                "deployment.environment",
+                                Environment.GetEnvironmentVariable("ENV") ?? "prd")
+                        }))
+                .AddSource("Worker")
+                .AddOtlpExporter(opts =>
+                {
+                    opts.Endpoint = new Uri(otelEndpoint);
+                })
+                .Build();
+
+            // ───────────────────────────────────────────────────────
+            // Prometheus metrics HTTP server on :9090
+            // ───────────────────────────────────────────────────────
+            var metricServer = new MetricServer(port: 9090);
+            metricServer.Start();
+            Console.WriteLine("[INFO] Prometheus metrics server started on :9090/metrics");
+
             try
             {
-                var pgsql = OpenDbConnection("Server=db;Username=postgres;Password=postgres;");
-                var redisConn = OpenRedisConnection("redis");
+                var tracer = TracerProvider.Default.GetTracer("Worker");
+
+                var pgsql = OpenDbConnection(
+                    $"Server={Environment.GetEnvironmentVariable("DB_HOST") ?? "127.0.0.1"};" +
+                    $"Port={Environment.GetEnvironmentVariable("DB_PORT") ?? "5432"};" +
+                    $"Username={Environment.GetEnvironmentVariable("DB_USER") ?? "postgres"};" +
+                    $"Password={Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "postgres"};" +
+                    $"Database={Environment.GetEnvironmentVariable("DB_NAME") ?? "postgres"};");
+
+                var redisHost = Environment.GetEnvironmentVariable("REDIS_HOST") ?? "redis";
+                var redisConn = OpenRedisConnection(redisHost);
                 var redis = redisConn.GetDatabase();
 
-                // Keep alive is not implemented in Npgsql yet. This workaround was recommended:
-                // https://github.com/npgsql/npgsql/issues/1214#issuecomment-235828359
                 var keepAliveCommand = pgsql.CreateCommand();
                 keepAliveCommand.CommandText = "SELECT 1";
 
                 var definition = new { vote = "", voter_id = "" };
                 while (true)
                 {
-                    // Slow down to prevent CPU spike, only query each 100ms
                     Thread.Sleep(100);
 
-                    // Reconnect redis if down
-                    if (redisConn == null || !redisConn.IsConnected) {
-                        Console.WriteLine("Reconnecting Redis");
-                        redisConn = OpenRedisConnection("redis");
+                    if (redisConn == null || !redisConn.IsConnected)
+                    {
+                        Console.WriteLine("[WARN] {\"message\":\"Reconnecting Redis\"}");
+                        redisConn = OpenRedisConnection(redisHost);
                         redis = redisConn.GetDatabase();
                     }
+
+                    // Update queue depth gauge
+                    try { QueueDepth.Set(redis.ListLength("votes")); } catch { /* ignore */ }
+
                     string json = redis.ListLeftPopAsync("votes").Result;
                     if (json != null)
                     {
-                        var vote = JsonConvert.DeserializeAnonymousType(json, definition);
-                        Console.WriteLine($"Processing vote for '{vote.vote}' by '{vote.voter_id}'");
-                        // Reconnect DB if down
-                        if (!pgsql.State.Equals(System.Data.ConnectionState.Open))
+                        using var timer = VoteProcessingDuration.Labels("worker-app").NewTimer();
+                        using var span = tracer.StartActiveSpan("process-vote");
+
+                        try
                         {
-                            Console.WriteLine("Reconnecting DB");
-                            pgsql = OpenDbConnection("Server=db;Username=postgres;Password=postgres;");
-                        }
-                        else
-                        { // Normal +1 vote requested
+                            var vote = JsonConvert.DeserializeAnonymousType(json, definition);
+                            span.SetAttribute("vote.option", vote.vote);
+                            span.SetAttribute("voter.id", vote.voter_id);
+                            Console.WriteLine($"[INFO] {{\"message\":\"Processing vote\",\"vote\":\"{vote.vote}\",\"voter_id\":\"{vote.voter_id}\"}}");
+
+                            if (!pgsql.State.Equals(System.Data.ConnectionState.Open))
+                            {
+                                Console.WriteLine("[WARN] {\"message\":\"Reconnecting DB\"}");
+                                pgsql = OpenDbConnection($"Server=127.0.0.1;Username={Environment.GetEnvironmentVariable("DB_USER") ?? "postgres"};Password={Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "postgres"};");
+                            }
+
                             UpdateVote(pgsql, vote.voter_id, vote.vote);
+                            VotesProcessed.Labels("worker-app").Inc();
+                            span.SetStatus(Status.Ok);
+                        }
+                        catch (Exception ex)
+                        {
+                            VoteErrors.Labels("worker-app", ex.GetType().Name).Inc();
+                            span.SetStatus(Status.Error, ex.Message);
+                            Console.Error.WriteLine($"[ERROR] {{\"message\":\"Vote processing failed\",\"error\":\"{ex.Message}\"}}");
                         }
                     }
                     else
@@ -61,7 +143,7 @@ namespace Worker
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.ToString());
+                Console.Error.WriteLine($"[ERROR] {{\"message\":\"Fatal error\",\"error\":\"{ex}\"}}");
                 return 1;
             }
         }
@@ -69,7 +151,6 @@ namespace Worker
         private static NpgsqlConnection OpenDbConnection(string connectionString)
         {
             NpgsqlConnection connection;
-
             while (true)
             {
                 try
@@ -80,17 +161,17 @@ namespace Worker
                 }
                 catch (SocketException)
                 {
-                    Console.Error.WriteLine("Waiting for db");
+                    Console.Error.WriteLine("[WARN] {\"message\":\"Waiting for db (socket)\"}");
                     Thread.Sleep(1000);
                 }
                 catch (DbException)
                 {
-                    Console.Error.WriteLine("Waiting for db");
+                    Console.Error.WriteLine("[WARN] {\"message\":\"Waiting for db (db exception)\"}");
                     Thread.Sleep(1000);
                 }
             }
 
-            Console.Error.WriteLine("Connected to db");
+            Console.WriteLine("[INFO] {\"message\":\"Connected to db\"}");
 
             var command = connection.CreateCommand();
             command.CommandText = @"CREATE TABLE IF NOT EXISTS votes (
@@ -98,26 +179,24 @@ namespace Worker
                                         vote VARCHAR(255) NOT NULL
                                     )";
             command.ExecuteNonQuery();
-
             return connection;
         }
 
         private static ConnectionMultiplexer OpenRedisConnection(string hostname)
         {
-            // Use IP address to workaround https://github.com/StackExchange/StackExchange.Redis/issues/410
             var ipAddress = GetIp(hostname);
-            Console.WriteLine($"Found redis at {ipAddress}");
+            Console.WriteLine($"[INFO] {{\"message\":\"Found redis\",\"address\":\"{ipAddress}\"}}");
 
             while (true)
             {
                 try
                 {
-                    Console.Error.WriteLine("Connecting to redis");
+                    Console.Error.WriteLine("[INFO] {\"message\":\"Connecting to redis\"}");
                     return ConnectionMultiplexer.Connect(ipAddress);
                 }
                 catch (RedisConnectionException)
                 {
-                    Console.Error.WriteLine("Waiting for redis");
+                    Console.Error.WriteLine("[WARN] {\"message\":\"Waiting for redis\"}");
                     Thread.Sleep(1000);
                 }
             }
