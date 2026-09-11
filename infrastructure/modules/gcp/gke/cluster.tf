@@ -44,6 +44,14 @@ resource "google_container_cluster" "primary" {
     gce_persistent_disk_csi_driver_config {
       enabled = var.enable_gce_persistent_disk_csi_driver
     }
+
+    # Gateway API configuration
+    dynamic "gateway_api_config" {
+      for_each = var.gateway_api_channel != "CHANNEL_DISABLED" ? [1] : []
+      content {
+        channel = var.gateway_api_channel
+      }
+    }
   }
 
   # Private cluster configuration

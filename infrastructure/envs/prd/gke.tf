@@ -32,6 +32,7 @@ module "gke" {
   enable_gce_persistent_disk_csi_driver = true
   enable_binary_authorization           = false # Enable if using Binary Authorization
   enable_shielded_nodes                 = true
+  gateway_api_channel                   = "CHANNEL_STANDARD"
 
   # Release Channel
   release_channel = "REGULAR" # RAPID, REGULAR, or STABLE

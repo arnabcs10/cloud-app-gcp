@@ -176,6 +176,16 @@ variable "cluster_timeout_delete" {
   default     = "45m"
 }
 
+variable "gateway_api_channel" {
+  description = "Gateway API channel (CHANNEL_DISABLED, CHANNEL_EXPERIMENTAL, CHANNEL_STANDARD)"
+  type        = string
+  default     = "CHANNEL_DISABLED"
+  validation {
+    condition     = contains(["CHANNEL_DISABLED", "CHANNEL_EXPERIMENTAL", "CHANNEL_STANDARD"], var.gateway_api_channel)
+    error_message = "Gateway API channel must be one of: CHANNEL_DISABLED, CHANNEL_EXPERIMENTAL, CHANNEL_STANDARD."
+  }
+}
+
 variable "node_pools" {
   description = "List of node pools"
   type = list(object({
