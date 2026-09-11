@@ -8,3 +8,4 @@ labels:
 
 resources:
   - gateway.yaml
+  - ./observability
