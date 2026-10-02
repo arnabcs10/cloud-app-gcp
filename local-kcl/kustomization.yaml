@@ -1,0 +1,27 @@
+# Kustomization for Voting App - Local Test Cluster
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: voting-app
+
+resources:
+  - namespace.yaml
+  - postgres-deployment.yaml
+  - redis-deployment.yaml
+  - vote-deployment.yaml
+  - result-deployment.yaml
+  - worker-deployment.yaml
+  - observability/prometheus-deployment.yaml
+  - observability/loki-deployment.yaml
+  - observability/promtail-deployment.yaml
+  - observability/grafana-deployment.yaml
+
+commonLabels:
+  environment: test
+  deployment: local
+  managed-by: kustomize
+
+commonAnnotations:
+  description: "Voting app test deployment for local cluster"
+  cluster-size: "small"
+  resource-profile: "minimal"
