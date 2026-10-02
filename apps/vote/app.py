@@ -31,11 +31,13 @@ OTEL_ENDPOINT = os.getenv(
     "http://otel-collector.ns-observability.svc.cluster.local:4317",
 )
 
-resource = Resource.create({
-    "service.name": "vote-app",
-    "service.version": "1.0.0",
-    "deployment.environment": os.getenv("ENV", "prd"),
-})
+resource = Resource.create(
+    {
+        "service.name": "vote-app",
+        "service.version": "1.0.0",
+        "deployment.environment": os.getenv("ENV", "prd"),
+    }
+)
 
 tracer_provider = TracerProvider(resource=resource)
 otlp_exporter = OTLPSpanExporter(endpoint=OTEL_ENDPOINT, insecure=True)
@@ -107,6 +109,7 @@ def healthz():
 @app.route("/", methods=["POST", "GET"])
 def hello():
     import time
+
     start = time.time()
 
     voter_id = request.cookies.get("voter_id")
@@ -130,13 +133,20 @@ def hello():
                 VOTE_COUNTER.labels(option=vote).inc()
                 logger.info(
                     '{"message": "Vote cast", "voter_id": "%s", "vote": "%s", "trace_id": "%s"}',
-                    voter_id, vote,
-                    format(trace.get_current_span().get_span_context().trace_id, "032x"),
+                    voter_id,
+                    vote,
+                    format(
+                        trace.get_current_span().get_span_context().trace_id, "032x"
+                    ),
                 )
 
-        REQUEST_COUNT.labels(method=request.method, status="200", service="vote-app").inc()
+        REQUEST_COUNT.labels(
+            method=request.method, status="200", service="vote-app"
+        ).inc()
     except Exception as exc:
-        REQUEST_COUNT.labels(method=request.method, status="500", service="vote-app").inc()
+        REQUEST_COUNT.labels(
+            method=request.method, status="500", service="vote-app"
+        ).inc()
         logger.error('{"message": "Request failed", "error": "%s"}', str(exc))
         raise
     finally:
