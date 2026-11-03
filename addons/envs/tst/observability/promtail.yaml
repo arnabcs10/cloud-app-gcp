@@ -1,0 +1,156 @@
+# =============================================================================
+# Promtail Helm Chart Values
+# Chart: grafana/promtail  v6.16.6
+# Namespace: ns-observability
+# Runs as DaemonSet on all nodes, ships logs to Loki
+# =============================================================================
+
+# Use existing service account with ClusterRole
+serviceAccount:
+  create: false
+  name: promtail
+
+rbac:
+  create: false
+  pspEnabled: false
+
+# DaemonSet — one pod per node
+deploymentKind: DaemonSet
+
+tolerations:
+  - operator: Exists
+    effect: NoSchedule
+
+# -----------------------------------------------------------------------
+# Loki push endpoint
+# -----------------------------------------------------------------------
+config:
+  clients:
+    - url: http://loki.ns-observability.svc.cluster.local:3100/loki/api/v1/push
+      batchwait: 1s
+      batchsize: 1048576
+      timeout: 10s
+      backoff_config:
+        min_period: 500ms
+        max_period: 5m
+        max_retries: 10
+
+  # -----------------------------------------------------------------------
+  # Scrape configs
+  # -----------------------------------------------------------------------
+  snippets:
+    scrapeConfigs: |
+      # ----------------------------------------
+      # Kubernetes Pod logs
+      # ----------------------------------------
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        pipeline_stages:
+          - docker: {}
+          - json:
+              expressions:
+                level: level
+                msg: message
+                trace_id: trace_id
+                timestamp: timestamp
+          - drop:
+              expression: '.*level.*debug.*'
+              drop_counter_enabled: true
+          - labels:
+              level:
+              trace_id:
+          - timestamp:
+              source: timestamp
+              format: RFC3339Nano
+              fallback_formats:
+                - RFC3339
+                - "2006-01-02T15:04:05.000Z"
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: ns-vote-app|ns-result-app|ns-worker-app|ns-redis|ns-observability
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: node_name
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            action: replace
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: replace
+            target_label: app
+          - replacement: /var/log/pods/*$1/*.log
+            separator: /
+            source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+
+      # ----------------------------------------
+      # Systemd journal
+      # ----------------------------------------
+      - job_name: systemd-journal
+        journal:
+          path: /var/log/journal
+          max_age: 12h
+          labels:
+            job: systemd-journal
+        pipeline_stages:
+          - match:
+              selector: '{job="systemd-journal"}'
+              stages:
+                - labels:
+                    transport:
+                    priority:
+        relabel_configs:
+          - source_labels: [__journal__systemd_unit]
+            target_label: systemd_unit
+          - source_labels: [__journal__hostname]
+            target_label: node
+
+# -----------------------------------------------------------------------
+# Volume mounts for log collection
+# -----------------------------------------------------------------------
+volumeMounts:
+  - name: pods-logs
+    mountPath: /var/log/pods
+    readOnly: true
+  - name: docker-logs
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+  - name: journal
+    mountPath: /var/log/journal
+    readOnly: true
+
+volumes:
+  - name: pods-logs
+    hostPath:
+      path: /var/log/pods
+  - name: docker-logs
+    hostPath:
+      path: /var/lib/docker/containers
+  - name: journal
+    hostPath:
+      path: /var/log/journal
+
+# -----------------------------------------------------------------------
+# Resources
+# -----------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Run as root to read /var/log/pods
+podSecurityContext:
+  runAsUser: 0
+  runAsGroup: 0

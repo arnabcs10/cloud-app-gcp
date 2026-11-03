@@ -1,0 +1,112 @@
+# =============================================================================
+# Loki Helm Chart Values
+# Chart: grafana/loki  v6.6.5
+# Namespace: ns-observability
+# Stage: testing (10GB storage, 7-day retention, single-binary mode)
+# =============================================================================
+
+# Single-binary mode is the simplest deployment (monolithic)
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+
+  storage:
+    type: filesystem
+
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+
+  # Testing-stage limits: minimal ingestion rate
+  limits_config:
+    retention_period: 168h          # 7 days
+    ingestion_rate_mb: 4
+    ingestion_burst_size_mb: 8
+    max_streams_per_user: 1000
+    max_chunks_per_query: 2000000
+    max_query_series: 500
+    split_queries_by_interval: 24h
+
+  rulerConfig:
+    alertmanager_url: http://alertmanager.ns-observability.svc.cluster.local:9093
+
+  server:
+    log_level: warn
+    http_listen_port: 3100
+    grpc_listen_port: 9096
+
+  analytics:
+    reporting_enabled: false
+
+  query_range:
+    results_cache:
+      cache:
+        embedded_cache:
+          enabled: true
+          max_size_mb: 100
+
+  compactor:
+    working_directory: /var/loki/boltdb-shipper-compactor
+    compaction_interval: 10m
+    retention_enabled: true
+    retention_delete_delay: 2h
+    retention_delete_worker_count: 150
+    delete_request_store: filesystem
+
+# Single-binary deployment config
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: standard-rwo
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# Disable all other components (not needed in single-binary)
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# Use existing service account
+serviceAccount:
+  create: false
+  name: loki
+
+# Gateway disabled (apps talk directly to Loki service)
+gateway:
+  enabled: false
+
+# Test mode disabled
+test:
+  enabled: false
+lokiCanary:
+  enabled: false
+
+# Monitoring disabled (Prometheus will scrape via k8s SD)
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false

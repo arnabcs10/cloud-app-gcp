@@ -15,6 +15,7 @@ data:
   DB_NAME: "voting_app"
   DB_USER: "postgres"
   DB_PASSWORD: "postgres"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4317"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -91,6 +92,11 @@ spec:
             configMapKeyRef:
               name: worker-config
               key: DB_PASSWORD
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: worker-config
+              key: OTEL_EXPORTER_OTLP_ENDPOINT
         - name: CONNECTION_STRING
           value: "Server=$(DB_HOST);Port=$(DB_PORT);Database=$(DB_NAME);Username=$(DB_USER);Password=$(DB_PASSWORD);"
         resources:
@@ -100,3 +106,24 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-metrics
+  namespace: voting-app
+  labels:
+    app: worker
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+  selector:
+    app: worker

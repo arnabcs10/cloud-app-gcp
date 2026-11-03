@@ -1,0 +1,117 @@
+# =============================================================================
+# Observability Stack — Kustomization
+# Renders all components via Helm charts + values overrides.
+#
+# IMPORTANT: Requires --enable-helm flag:
+#   kubectl kustomize --enable-helm addons/envs/prd/observability/
+#   kubectl apply -k addons/envs/prd/observability/ --enable-helm
+#
+# Helm charts must be pre-downloaded into addons/helm-charts/ by running:
+#   ./update-helm-charts.sh
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Global label applied to all rendered resources
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: observability-stack
+      env: prd
+
+# -----------------------------------------------------------------------
+# Plain resources: namespace, RBAC, network policies, secrets
+# (These cannot be expressed as Helm values — kept as raw manifests)
+# -----------------------------------------------------------------------
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - networkpolicy.yaml
+  - secrets.yaml
+  # HTTPRoute for Grafana (Gateway API — not part of Grafana chart)
+  - grafana-httproute.yaml
+
+helmGlobals:
+  chartHome: ../../../helm-charts
+
+# -----------------------------------------------------------------------
+# Helm Charts — each rendered with its own values file
+# Charts are sourced locally from addons/helm-charts/
+# -----------------------------------------------------------------------
+helmCharts:
+  # -------------------------------------------------------------------
+  # Prometheus (includes node-exporter + kube-state-metrics as sub-charts)
+  # -------------------------------------------------------------------
+  - name: prometheus
+    # repo: https://prometheus-community.github.io/helm-charts
+    version: "25.21.0"
+    releaseName: prometheus
+    namespace: ns-observability
+    valuesFile: prometheus.yaml
+    includeCRDs: false
+
+  # -------------------------------------------------------------------
+  # Grafana
+  # -------------------------------------------------------------------
+  - name: grafana
+    # repo: https://grafana.github.io/helm-charts
+    version: "8.0.0"
+    releaseName: grafana
+    namespace: ns-observability
+    valuesFile: grafana.yaml
+    includeCRDs: false
+
+  # -------------------------------------------------------------------
+  # Loki (single-binary mode)
+  # -------------------------------------------------------------------
+  - name: loki
+    # repo: https://grafana.github.io/helm-charts
+    version: "6.6.5"
+    releaseName: loki
+    namespace: ns-observability
+    valuesFile: loki.yaml
+    includeCRDs: false
+
+  # -------------------------------------------------------------------
+  # Promtail (DaemonSet log shipper)
+  # -------------------------------------------------------------------
+  - name: promtail
+    # repo: https://grafana.github.io/helm-charts
+    version: "6.16.6"
+    releaseName: promtail
+    namespace: ns-observability
+    valuesFile: promtail.yaml
+    includeCRDs: false
+
+  # -------------------------------------------------------------------
+  # Tempo (distributed tracing backend)
+  # -------------------------------------------------------------------
+  - name: tempo
+    # repo: https://grafana.github.io/helm-charts
+    version: "1.10.3"
+    releaseName: tempo
+    namespace: ns-observability
+    valuesFile: tempo.yaml
+    includeCRDs: false
+
+  # -------------------------------------------------------------------
+  # OpenTelemetry Collector (trace receiver + sampler)
+  # -------------------------------------------------------------------
+  - name: opentelemetry-collector
+    # repo: https://open-telemetry.github.io/opentelemetry-helm-charts
+    version: "0.91.1"
+    releaseName: otel-collector
+    namespace: ns-observability
+    valuesFile: opentelemetry-collector.yaml
+    includeCRDs: false
+
+  # -------------------------------------------------------------------
+  # Redis Exporter (Prometheus metrics for Redis in ns-redis)
+  # -------------------------------------------------------------------
+  - name: prometheus-redis-exporter
+    # repo: https://prometheus-community.github.io/helm-charts
+    version: "6.3.0"
+    releaseName: redis-exporter
+    namespace: ns-observability
+    valuesFile: redis-exporter.yaml
+    includeCRDs: false

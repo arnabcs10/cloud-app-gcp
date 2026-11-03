@@ -76,6 +76,8 @@ metadata:
   namespace: voting-app
   labels:
     app: redis
+  annotations:
+    prometheus.io/scrape: "false"
 spec:
   type: ClusterIP
   ports:

@@ -7,8 +7,9 @@
 # for example, if you were on Intel (amd64) and wanted to build for ARM, you would use:
 # docker buildx build --platform "linux/arm64/v8" .
 
+# CHANGE: Updated from mcr.microsoft.com/dotnet/sdk:7.0 to sdk:8.0 to support .NET 8.0 target framework
 # build compiles the program for the builder's local platform
-FROM --platform=${BUILDPLATFORM} mcr.microsoft.com/dotnet/sdk:7.0 AS build
+FROM --platform=${BUILDPLATFORM} mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG TARGETPLATFORM
 ARG TARGETARCH
 ARG BUILDPLATFORM
@@ -21,8 +22,9 @@ RUN dotnet restore -a $TARGETARCH
 COPY . .
 RUN dotnet publish -c release -o /app -a $TARGETARCH --self-contained false --no-restore
 
+# CHANGE: Updated from mcr.microsoft.com/dotnet/runtime:7.0 to runtime:8.0 to match SDK version
 # app image
-FROM mcr.microsoft.com/dotnet/runtime:7.0
+FROM mcr.microsoft.com/dotnet/runtime:8.0
 WORKDIR /app
 COPY --from=build /app .
 ENTRYPOINT ["dotnet", "Worker.dll"]
