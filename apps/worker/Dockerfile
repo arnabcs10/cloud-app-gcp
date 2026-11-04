@@ -22,9 +22,9 @@ RUN dotnet restore -a $TARGETARCH
 COPY . .
 RUN dotnet publish -c release -o /app -a $TARGETARCH --self-contained false --no-restore
 
-# CHANGE: Updated from mcr.microsoft.com/dotnet/runtime:7.0 to runtime:8.0 to match SDK version
+# CHANGE: Updated from runtime:8.0 to aspnet:8.0 to include Microsoft.AspNetCore.App framework required by prometheus-net.AspNetCore package
 # app image
-FROM mcr.microsoft.com/dotnet/runtime:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app .
 ENTRYPOINT ["dotnet", "Worker.dll"]
