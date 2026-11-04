@@ -78,7 +78,8 @@ config:
       tls:
         insecure: true
 
-    logging:
+    # CHANGE: Replaced deprecated 'logging' exporter with 'debug' exporter
+    debug:
       verbosity: basic
 
   extensions:
@@ -95,12 +96,14 @@ config:
       traces:
         receivers: [otlp]
         processors: [memory_limiter, resource, probabilistic_sampler, batch]
-        exporters: [otlp/tempo, logging]
+        # CHANGE: Updated exporter reference from 'logging' to 'debug'
+        exporters: [otlp/tempo, debug]
     telemetry:
       logs:
         level: warn
+      # CHANGE: Removed invalid 'address' key; metrics endpoint is configured via ports section
       metrics:
-        address: 0.0.0.0:8888
+        level: basic
 
 # -----------------------------------------------------------------------
 # Resources - Minimal for 4GB cluster

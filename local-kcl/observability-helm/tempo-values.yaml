@@ -17,7 +17,7 @@ serviceAccount:
 # -----------------------------------------------------------------------
 persistence:
   enabled: true
-  storageClassName: standard
+  storageClassName: local-path
   accessModes:
     - ReadWriteOnce
   size: 3Gi
