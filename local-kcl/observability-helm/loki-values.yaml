@@ -1,0 +1,112 @@
+# =============================================================================
+# Loki Helm Chart Values - Optimized for 4GB Cluster
+# Chart: grafana/loki v6.6.5
+# Namespace: observability
+# Stage: Small cluster (2GB storage, 3-day retention, single-binary mode)
+# =============================================================================
+
+# Single-binary mode for minimal resources
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+
+  storage:
+    type: filesystem
+
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+
+  # Reduced limits for small cluster
+  limits_config:
+    retention_period: 72h          # 3 days
+    ingestion_rate_mb: 2
+    ingestion_burst_size_mb: 4
+    max_streams_per_user: 500
+    max_chunks_per_query: 1000000
+    max_query_series: 500
+    split_queries_by_interval: 24h
+
+  server:
+    log_level: warn
+    http_listen_port: 3100
+    grpc_listen_port: 9096
+
+  analytics:
+    reporting_enabled: false
+
+  query_range:
+    results_cache:
+      cache:
+        embedded_cache:
+          enabled: true
+          max_size_mb: 50
+
+  compactor:
+    working_directory: /var/loki/boltdb-shipper-compactor
+    compaction_interval: 10m
+    retention_enabled: true
+    retention_delete_delay: 2h
+    retention_delete_worker_count: 50
+    delete_request_store: filesystem
+
+# Single-binary deployment config - Minimal resources
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: standard
+    accessModes:
+      - ReadWriteOnce
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+    port: 3100
+
+# Disable all other components (not needed in single-binary)
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# Use existing service account
+serviceAccount:
+  create: false
+  name: loki
+
+# Gateway disabled
+gateway:
+  enabled: false
+
+# Test mode disabled
+test:
+  enabled: false
+lokiCanary:
+  enabled: false
+
+# Monitoring disabled
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false

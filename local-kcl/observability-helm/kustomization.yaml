@@ -1,0 +1,90 @@
+# =============================================================================
+# Observability Stack - Helm-based Kustomization for Small Cluster (4GB RAM)
+# Adjusted for local test environment with minimal resources
+#
+# Usage:
+#   kubectl kustomize --enable-helm local-kcl/observability-helm/ > observability-deployment.yaml
+#   kubectl apply -f observability-deployment.yaml
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Global labels
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: observability-stack
+      env: local-test
+
+# -----------------------------------------------------------------------
+# Plain resources: namespace, RBAC, secrets
+# -----------------------------------------------------------------------
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - secrets.yaml
+
+helmGlobals:
+  chartHome: ../../../cloud-app-gcp/addons/helm-charts
+
+# -----------------------------------------------------------------------
+# Helm Charts - Complete observability stack for 4GB RAM cluster
+# Components: Prometheus, Grafana, Loki, Promtail, Tempo, OTel Collector, Redis Exporter
+# All components optimized for small cluster
+# -----------------------------------------------------------------------
+helmCharts:
+  # Prometheus - Reduced resources
+  - name: prometheus
+    version: "25.21.0"
+    releaseName: prometheus
+    namespace: observability
+    valuesFile: prometheus-values.yaml
+    includeCRDs: false
+
+  # Grafana - Minimal config
+  - name: grafana
+    version: "8.0.0"
+    releaseName: grafana
+    namespace: observability
+    valuesFile: grafana-values.yaml
+    includeCRDs: false
+
+  # Loki - Single binary mode
+  - name: loki
+    version: "6.6.5"
+    releaseName: loki
+    namespace: observability
+    valuesFile: loki-values.yaml
+    includeCRDs: false
+
+  # Promtail - Log collector
+  - name: promtail
+    version: "6.16.6"
+    releaseName: promtail
+    namespace: observability
+    valuesFile: promtail-values.yaml
+    includeCRDs: false
+
+  # Tempo - Distributed tracing
+  - name: tempo
+    version: "1.10.3"
+    releaseName: tempo
+    namespace: observability
+    valuesFile: tempo-values.yaml
+    includeCRDs: false
+
+  # OpenTelemetry Collector - OTLP receiver and sampler
+  - name: opentelemetry-collector
+    version: "0.91.1"
+    releaseName: otel-collector
+    namespace: observability
+    valuesFile: opentelemetry-collector-values.yaml
+    includeCRDs: false
+
+  # Redis Exporter - Redis metrics
+  - name: prometheus-redis-exporter
+    version: "6.3.0"
+    releaseName: redis-exporter
+    namespace: observability
+    valuesFile: redis-exporter-values.yaml
+    includeCRDs: false

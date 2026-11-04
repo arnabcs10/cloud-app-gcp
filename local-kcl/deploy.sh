@@ -106,29 +106,6 @@ echo ""
 print_info "Deploying observability stack..."
 echo ""
 
-# Step 5: Deploy Observability Stack
-print_info "Deploying Prometheus..."
-kubectl apply -f observability/prometheus-deployment.yaml
-print_success "Prometheus manifests applied"
-
-print_info "Deploying Loki..."
-kubectl apply -f observability/loki-deployment.yaml
-print_success "Loki manifests applied"
-
-print_info "Deploying Promtail..."
-kubectl apply -f observability/promtail-deployment.yaml
-print_success "Promtail manifests applied"
-
-print_info "Deploying Grafana..."
-kubectl apply -f observability/grafana-deployment.yaml
-print_success "Grafana manifests applied"
-
-# Wait for observability stack
-print_info "Waiting for observability stack to be ready (max 120s)..."
-kubectl wait --for=condition=ready pod -l app=prometheus -n observability --timeout=120s || true
-kubectl wait --for=condition=ready pod -l app=loki -n observability --timeout=120s || true
-kubectl wait --for=condition=ready pod -l app=grafana -n observability --timeout=120s || true
-print_success "Observability stack deployed"
 
 echo ""
 echo "========================================"
@@ -150,10 +127,6 @@ fi
 echo "Application Endpoints:"
 echo "  Vote App:    http://${NODE_IP}:31000"
 echo "  Result App:  http://${NODE_IP}:31001"
-echo ""
-echo "Observability Endpoints:"
-echo "  Prometheus:  http://${NODE_IP}:32090"
-echo "  Grafana:     http://${NODE_IP}:32300 (admin/admin)"
 echo ""
 echo "Check deployment status:"
 echo "  kubectl get pods -n voting-app"

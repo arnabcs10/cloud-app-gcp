@@ -1,0 +1,180 @@
+# =============================================================================
+# Grafana Helm Chart Values - Optimized for 4GB Cluster
+# Chart: grafana/grafana v8.0.0
+# Namespace: observability
+# =============================================================================
+
+replicas: 1
+
+image:
+  tag: "11.0.0"
+
+# Use existing service account
+serviceAccount:
+  create: false
+  name: grafana
+
+# -----------------------------------------------------------------------
+# Persistence - Reduced to 1Gi
+# -----------------------------------------------------------------------
+persistence:
+  enabled: true
+  type: pvc
+  storageClassName: standard
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+
+# -----------------------------------------------------------------------
+# Admin credentials (from secret)
+# -----------------------------------------------------------------------
+admin:
+  existingSecret: grafana-admin-secret
+  userKey: admin-user
+  passwordKey: admin-password
+
+# -----------------------------------------------------------------------
+# grafana.ini settings - Simplified for test
+# -----------------------------------------------------------------------
+grafana.ini:
+  server:
+    domain: localhost
+    root_url: http://localhost:32300
+  security:
+    allow_embedding: false
+  auth:
+    disable_login_form: false
+  users:
+    allow_sign_up: false
+    default_theme: dark
+  log:
+    mode: console
+    level: warn
+  alerting:
+    enabled: false
+  unified_alerting:
+    enabled: false
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+
+# -----------------------------------------------------------------------
+# Data Sources: Prometheus + Loki + Tempo (with cross-linking)
+# -----------------------------------------------------------------------
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus-server.observability.svc.cluster.local:9090
+        isDefault: true
+        jsonData:
+          httpMethod: POST
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: tempo
+        editable: false
+
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.observability.svc.cluster.local:3100
+        jsonData:
+          maxLines: 1000
+          derivedFields:
+            - name: TraceID
+              matcherRegex: "trace_id=(\\w+)"
+              url: "$${__value.raw}"
+              datasourceUid: tempo
+        editable: false
+
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo.observability.svc.cluster.local:3200
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            filterByTraceID: true
+            filterBySpanID: false
+          tracesToMetrics:
+            datasourceUid: prometheus
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+        editable: false
+
+# -----------------------------------------------------------------------
+# Dashboard providers
+# -----------------------------------------------------------------------
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+# -----------------------------------------------------------------------
+# Pre-configured dashboards
+# -----------------------------------------------------------------------
+dashboards:
+  default:
+    kubernetes-cluster:
+      gnetId: 7249
+      revision: 1
+      datasource: Prometheus
+    kubernetes-pods:
+      gnetId: 6417
+      revision: 1
+      datasource: Prometheus
+    loki-logs:
+      gnetId: 13639
+      revision: 2
+      datasource: Loki
+
+# -----------------------------------------------------------------------
+# Resources - Minimal for 4GB cluster
+# -----------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# -----------------------------------------------------------------------
+# Service - NodePort for external access
+# -----------------------------------------------------------------------
+service:
+  type: NodePort
+  port: 80
+  targetPort: 3000
+  nodePort: 32300
+
+# Disable unnecessary features
+plugins: []
+sidecar:
+  dashboards:
+    enabled: false
+  datasources:
+    enabled: false
+
+rbac:
+  create: false
+  pspEnabled: false
+
+testFramework:
+  enabled: false

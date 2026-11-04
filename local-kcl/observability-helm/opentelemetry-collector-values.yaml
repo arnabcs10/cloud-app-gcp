@@ -1,0 +1,136 @@
+# =============================================================================
+# OpenTelemetry Collector Helm Chart Values - Optimized for 4GB Cluster
+# Chart: open-telemetry/opentelemetry-collector v0.91.1
+# Namespace: observability
+# Receives OTLP traces, samples, forwards to Tempo
+# =============================================================================
+
+image:
+  repository: "otel/opentelemetry-collector-k8s"
+
+mode: deployment
+replicaCount: 1
+
+# Use existing service account
+serviceAccount:
+  create: false
+  name: otel-collector
+
+# -----------------------------------------------------------------------
+# Ports: OTLP gRPC + HTTP + metrics + health
+# -----------------------------------------------------------------------
+ports:
+  otlp:
+    enabled: true
+    containerPort: 4317
+    servicePort: 4317
+    protocol: TCP
+  otlp-http:
+    enabled: true
+    containerPort: 4318
+    servicePort: 4318
+    protocol: TCP
+  metrics:
+    enabled: true
+    containerPort: 8888
+    servicePort: 8888
+    protocol: TCP
+
+# -----------------------------------------------------------------------
+# OTel Collector pipeline configuration
+# -----------------------------------------------------------------------
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+  processors:
+    batch:
+      send_batch_size: 1000
+      timeout: 5s
+      send_batch_max_size: 1500
+
+    memory_limiter:
+      check_interval: 1s
+      limit_mib: 400  # Reduced from 512
+      spike_limit_mib: 100  # Reduced from 128
+
+    # 20% head-based sampling for small cluster (increased from 10% for more traces)
+    probabilistic_sampler:
+      sampling_percentage: 20
+
+    resource:
+      attributes:
+        - action: insert
+          key: deployment.environment
+          value: local-test
+        - action: insert
+          key: k8s.cluster.name
+          value: local-test-cluster
+
+  exporters:
+    otlp/tempo:
+      endpoint: tempo.observability.svc.cluster.local:4317
+      tls:
+        insecure: true
+
+    logging:
+      verbosity: basic
+
+  extensions:
+    health_check:
+      endpoint: 0.0.0.0:13133
+    pprof:
+      endpoint: 0.0.0.0:1777
+    zpages:
+      endpoint: 0.0.0.0:55679
+
+  service:
+    extensions: [health_check, pprof, zpages]
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, resource, probabilistic_sampler, batch]
+        exporters: [otlp/tempo, logging]
+    telemetry:
+      logs:
+        level: warn
+      metrics:
+        address: 0.0.0.0:8888
+
+# -----------------------------------------------------------------------
+# Resources - Minimal for 4GB cluster
+# -----------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# -----------------------------------------------------------------------
+# Liveness / readiness via health_check extension
+# -----------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /
+    port: 13133
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: 13133
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001

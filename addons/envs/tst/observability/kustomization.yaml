@@ -29,7 +29,7 @@ resources:
   - networkpolicy.yaml
   - secrets.yaml
   # HTTPRoute for Grafana (Gateway API — not part of Grafana chart)
-  - grafana-httproute.yaml
+  # - grafana-httproute.yaml
 
 helmGlobals:
   chartHome: ../../../helm-charts

@@ -1,0 +1,42 @@
+# =============================================================================
+# Prometheus Redis Exporter Helm Chart Values - Optimized for 4GB Cluster
+# Chart: prometheus-community/prometheus-redis-exporter v6.3.0
+# Namespace: observability
+# Scrapes Redis metrics and exposes on :9121
+# =============================================================================
+
+# Point to Redis in voting-app namespace
+redisAddress: redis://redis.voting-app.svc.cluster.local:6379
+
+# Prometheus scrape annotations — auto-discovered by Prometheus
+serviceMonitor:
+  enabled: false   # Using annotation-based scraping instead
+
+service:
+  type: ClusterIP
+  port: 9121
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9121"
+    prometheus.io/path: "/metrics"
+
+# Resources - Minimal for 4GB cluster
+resources:
+  requests:
+    cpu: 20m
+    memory: 32Mi
+  limits:
+    cpu: 50m
+    memory: 64Mi
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 59000
+
+# Log format
+extraEnvVars:
+  - name: REDIS_EXPORTER_LOG_FORMAT
+    value: json
+  - name: REDIS_EXPORTER_DEBUG
+    value: "false"

@@ -1,0 +1,8 @@
+# Observability Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    name: observability
+    app.kubernetes.io/part-of: observability-stack

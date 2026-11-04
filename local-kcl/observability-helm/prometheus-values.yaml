@@ -1,0 +1,222 @@
+# =============================================================================
+# Prometheus Helm Chart Values - Optimized for 4GB Cluster
+# Chart: prometheus-community/prometheus v25.21.0
+# Namespace: observability
+# =============================================================================
+
+# -----------------------------------------------------------------------
+# Prometheus Server - Reduced resources
+# -----------------------------------------------------------------------
+server:
+  enabled: true
+  replicaCount: 1
+  statefulSet:
+    enabled: true
+
+  # Storage - Reduced to 2Gi
+  persistentVolume:
+    enabled: true
+    size: 2Gi
+    storageClass: standard
+    accessModes:
+      - ReadWriteOnce
+
+  # Retention: 3 days / 1.5GB cap for small cluster
+  retention: "3d"
+  retentionSize: "1500MB"
+
+  # Resources - Minimal for 4GB cluster
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Basic security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534
+
+  # External labels
+  global:
+    scrape_interval: 60s
+    evaluation_interval: 60s
+    scrape_timeout: 10s
+    external_labels:
+      cluster: local-test
+      env: test
+
+  # NodePort for external access
+  service:
+    type: NodePort
+    port: 9090
+    nodePort: 32090
+
+  # Use existing service account
+  serviceAccountName: prometheus
+
+# -----------------------------------------------------------------------
+# Disable sub-charts to save resources
+# -----------------------------------------------------------------------
+alerting:
+  alertmanagers: []
+
+alertmanager:
+  enabled: false
+
+kube-state-metrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+prometheus-node-exporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 30Mi
+    limits:
+      cpu: 100m
+      memory: 50Mi
+
+prometheus-pushgateway:
+  enabled: false
+
+# -----------------------------------------------------------------------
+# Scrape Configs - Simplified for small cluster
+# -----------------------------------------------------------------------
+serverFiles:
+  prometheus.yml:
+    global:
+      scrape_interval: 60s
+      evaluation_interval: 60s
+      scrape_timeout: 10s
+      external_labels:
+        cluster: local-test
+        env: test
+
+    scrape_configs:
+      # Prometheus itself
+      - job_name: prometheus
+        static_configs:
+          - targets:
+              - localhost:9090
+
+      # Kubernetes API server
+      - job_name: kubernetes-apiservers
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: default;kubernetes;https
+
+      # Kubernetes nodes
+      - job_name: kubernetes-nodes
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.*)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/$1/proxy/metrics
+
+      # Kubernetes pods with annotations
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+      # Kubernetes services with annotations
+      - job_name: kubernetes-service-endpoints
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: kubernetes_name
+
+      # Vote app
+      - job_name: vote-app
+        static_configs:
+          - targets:
+              - vote.voting-app.svc.cluster.local:80
+            labels:
+              app: vote
+
+      # Result app  
+      - job_name: result-app
+        static_configs:
+          - targets:
+              - result.voting-app.svc.cluster.local:80
+            labels:
+              app: result
+
+      # Worker metrics
+      - job_name: worker-app
+        static_configs:
+          - targets:
+              - worker-metrics.voting-app.svc.cluster.local:9090
+            labels:
+              app: worker

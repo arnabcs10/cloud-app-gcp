@@ -1,0 +1,105 @@
+# =============================================================================
+# Promtail Helm Chart Values - Optimized for 4GB Cluster
+# Chart: grafana/promtail v6.16.6
+# Namespace: observability
+# Runs as DaemonSet, ships logs to Loki
+# =============================================================================
+
+# Use existing service account
+serviceAccount:
+  create: false
+  name: promtail
+
+rbac:
+  create: false
+  pspEnabled: false
+
+# DaemonSet — one pod per node
+deploymentKind: DaemonSet
+
+tolerations:
+  - operator: Exists
+    effect: NoSchedule
+
+# -----------------------------------------------------------------------
+# Loki push endpoint
+# -----------------------------------------------------------------------
+config:
+  clients:
+    - url: http://loki.observability.svc.cluster.local:3100/loki/api/v1/push
+      batchwait: 1s
+      batchsize: 1048576
+      timeout: 10s
+
+  # -----------------------------------------------------------------------
+  # Scrape configs - Simplified for small cluster
+  # -----------------------------------------------------------------------
+  snippets:
+    scrapeConfigs: |
+      # Kubernetes Pod logs
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        pipeline_stages:
+          - cri: {}
+        relabel_configs:
+          # Keep only voting-app and observability namespaces
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: voting-app|observability
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: node_name
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            action: replace
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: replace
+            target_label: app
+          - replacement: /var/log/pods/*$1/*.log
+            separator: /
+            source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+
+# -----------------------------------------------------------------------
+# Volume mounts for log collection
+# -----------------------------------------------------------------------
+volumeMounts:
+  - name: pods-logs
+    mountPath: /var/log/pods
+    readOnly: true
+  - name: docker-logs
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+
+volumes:
+  - name: pods-logs
+    hostPath:
+      path: /var/log/pods
+  - name: docker-logs
+    hostPath:
+      path: /var/lib/docker/containers
+
+# -----------------------------------------------------------------------
+# Resources - Minimal for small cluster
+# -----------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+# Run as root to read /var/log/pods
+podSecurityContext:
+  runAsUser: 0
+  runAsGroup: 0
