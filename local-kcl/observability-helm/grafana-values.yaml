@@ -131,18 +131,117 @@ dashboardProviders:
 # -----------------------------------------------------------------------
 dashboards:
   default:
-    kubernetes-cluster:
-      gnetId: 7249
-      revision: 1
-      datasource: Prometheus
-    kubernetes-pods:
-      gnetId: 6417
-      revision: 1
-      datasource: Prometheus
-    loki-logs:
-      gnetId: 13639
-      revision: 2
-      datasource: Loki
+    app-overview:
+      json: |
+        {
+          "title": "Application Overview",
+          "uid": "app-overview",
+          "tags": ["application", "voting-app"],
+          "timezone": "browser",
+          "refresh": "30s",
+          "time": { "from": "now-1h", "to": "now" },
+          "panels": [
+            {
+              "id": 1,
+              "title": "Request Rate by Service",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (service) (rate(http_requests_total[5m]))", "legendFormat": "{{ service }}"}]
+            },
+            {
+              "id": 2,
+              "title": "Error Rate by Service",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (service) (rate(http_requests_total{status=~\"5..\"}[5m]))", "legendFormat": "{{ service }} errors"}]
+            },
+            {
+              "id": 3,
+              "title": "P95 Latency by Service",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "{{ service }} p95"}]
+            },
+            {
+              "id": 4,
+              "title": "Redis Queue Depth",
+              "type": "stat",
+              "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "redis_list_length{key=\"votes\"}", "legendFormat": "votes queue"}]
+            },
+            {
+              "id": 5,
+              "title": "Pod Status",
+              "type": "table",
+              "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "kube_pod_status_phase{namespace=~\"voting-app\"}", "legendFormat": "{{ namespace }}/{{ pod }}"}]
+            },
+            {
+              "id": 6,
+              "title": "Application Logs (Recent Errors)",
+              "type": "logs",
+              "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+              "targets": [{"datasource": {"type": "loki", "uid": "loki"}, "expr": "{namespace=~\"voting-app\"} |= \"error\" | level=\"error\""}]
+            }
+          ]
+        }
+    infra-health:
+      json: |
+        {
+          "title": "Infrastructure Health",
+          "uid": "infra-health",
+          "tags": ["infrastructure", "kubernetes", "nodes"],
+          "timezone": "browser",
+          "refresh": "1m",
+          "time": { "from": "now-6h", "to": "now" },
+          "panels": [
+            {
+              "id": 1,
+              "title": "Node CPU Usage",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "{{ instance }}"}]
+            },
+            {
+              "id": 2,
+              "title": "Node Memory Usage",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes", "legendFormat": "{{ instance }}"}]
+            },
+            {
+              "id": 3,
+              "title": "Pod Restarts (Last 15m)",
+              "type": "table",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "increase(kube_pod_container_status_restarts_total[15m]) > 0", "legendFormat": "{{ namespace }}/{{ pod }}"}]
+            },
+            {
+              "id": 4,
+              "title": "HPA Replicas vs Desired",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+              "targets": [
+                {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "kube_horizontalpodautoscaler_status_current_replicas", "legendFormat": "{{ horizontalpodautoscaler }} current"},
+                {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "kube_horizontalpodautoscaler_status_desired_replicas", "legendFormat": "{{ horizontalpodautoscaler }} desired"}
+              ]
+            },
+            {
+              "id": 5,
+              "title": "Container CPU Usage by Namespace",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))", "legendFormat": "{{ namespace }}"}]
+            },
+            {
+              "id": 6,
+              "title": "Container Memory Usage by Namespace",
+              "type": "timeseries",
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+              "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (namespace) (container_memory_working_set_bytes{container!=\"\"})", "legendFormat": "{{ namespace }}"}]
+            }
+          ]
+        }
 
 # -----------------------------------------------------------------------
 # Resources - Minimal for 4GB cluster
@@ -152,7 +251,7 @@ resources:
     cpu: 50m
     memory: 128Mi
   limits:
-    cpu: 200m
+    cpu: 100m
     memory: 256Mi
 
 # -----------------------------------------------------------------------

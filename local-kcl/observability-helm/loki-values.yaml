@@ -67,17 +67,37 @@ singleBinary:
     storageClass: local-path
     accessModes:
       - ReadWriteOnce
-    size: 2Gi
+    size: 1Gi
   resources:
     requests:
       cpu: 50m
       memory: 128Mi
     limits:
-      cpu: 200m
+      cpu: 100m
       memory: 256Mi
   service:
     type: ClusterIP
     port: 3100
+
+chunksCache:
+  allocatedMemory: 200
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
+
+resultsCache:
+  allocatedMemory: 200
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
 
 # Disable all other components (not needed in single-binary)
 read:

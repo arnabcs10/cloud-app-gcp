@@ -28,11 +28,11 @@ server:
   # Resources - Minimal for 4GB cluster
   resources:
     requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
       cpu: 100m
       memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
 
   # Basic security context
   securityContext:
@@ -48,6 +48,15 @@ server:
 
   # Use existing service account
   serviceAccountName: prometheus
+
+  # CHANGE: Added global configuration at server level instead of serverFiles
+  global:
+    scrape_interval: 60s
+    evaluation_interval: 60s
+    scrape_timeout: 10s
+    external_labels:
+      cluster: local-test
+      env: test
 
 # -----------------------------------------------------------------------
 # Disable sub-charts to save resources
@@ -86,14 +95,7 @@ prometheus-pushgateway:
 # -----------------------------------------------------------------------
 serverFiles:
   prometheus.yml:
-    global:
-      scrape_interval: 60s
-      evaluation_interval: 60s
-      scrape_timeout: 10s
-      external_labels:
-        cluster: local-test
-        env: test
-
+    # CHANGE: Removed duplicate 'global' section - now configured at server.global level
     scrape_configs:
       # Prometheus itself
       - job_name: prometheus
