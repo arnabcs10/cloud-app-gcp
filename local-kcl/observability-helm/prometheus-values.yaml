@@ -59,6 +59,21 @@ server:
       env: test
 
 # -----------------------------------------------------------------------
+# ConfigMap Reload Sidecar - Optimized
+# -----------------------------------------------------------------------
+# CHANGE: Added configmap-reload resource optimization
+configmapReload:
+  prometheus:
+    enabled: true
+    resources:
+      requests:
+        cpu: 25m      # Reduced from 50m
+        memory: 32Mi  # Reduced from 128Mi
+      limits:
+        cpu: 50m      # Reduced from 100m
+        memory: 64Mi  # Reduced from 256Mi
+
+# -----------------------------------------------------------------------
 # Disable sub-charts to save resources
 # -----------------------------------------------------------------------
 alerting:
@@ -81,10 +96,10 @@ prometheus-node-exporter:
   enabled: true
   resources:
     requests:
-      cpu: 50m
+      cpu: 25m
       memory: 30Mi
     limits:
-      cpu: 100m
+      cpu: 50m
       memory: 50Mi
 
 prometheus-pushgateway:

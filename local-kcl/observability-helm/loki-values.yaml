@@ -70,33 +70,35 @@ singleBinary:
     size: 1Gi
   resources:
     requests:
-      cpu: 50m
+      cpu: 25m
       memory: 128Mi
     limits:
-      cpu: 100m
+      cpu: 25m
       memory: 256Mi
   service:
     type: ClusterIP
     port: 3100
 
 chunksCache:
+  enabled: false
   allocatedMemory: 200
   resources:
     requests:
-      cpu: 50m
+      cpu: 25m
       memory: 128Mi
     limits:
-      cpu: 100m
+      cpu: 25m
       memory: 256Mi
 
 resultsCache:
+  enabled: false
   allocatedMemory: 200
   resources:
     requests:
-      cpu: 50m
+      cpu: 25m
       memory: 128Mi
     limits:
-      cpu: 100m
+      cpu: 25m
       memory: 256Mi
 
 # Disable all other components (not needed in single-binary)
